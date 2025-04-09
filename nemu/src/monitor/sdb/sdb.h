@@ -18,6 +18,13 @@
 
 #include <common.h>
 
+#define MAX_EXPR_LEN 256
+
 word_t expr(char *e, bool *success);
+void info_watchpoints();
+void delete_watchpoint(int no);
+void add_watchpoint(char *e);
+void gen_rand_expr(char *buf, int *pos);
 
 #endif
+

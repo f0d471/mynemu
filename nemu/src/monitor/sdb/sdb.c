@@ -18,12 +18,54 @@
 #include <readline/readline.h>
 #include <readline/history.h>
 #include "sdb.h"
+#include <memory/paddr.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 static int is_batch_mode = false;
 
 void init_regex();
 void init_wp_pool();
 
+static int depth = 0;
+static const int MAX_DEPTH = 5;
+
+static void gen_num(char *buf, int *pos) {
+    int num = rand() % 100; 
+    *pos += snprintf(buf + *pos, MAX_EXPR_LEN - *pos, "%d", num);
+}
+
+static void gen_op(char *buf, int *pos) {
+    char ops[] = {'+', '-', '*', '/'};
+    char op = ops[rand() % 4];
+    *pos += snprintf(buf + *pos, MAX_EXPR_LEN - *pos, " %c ", op);
+}
+
+void gen_rand_expr(char *buf, int *pos) {
+    if (depth >= MAX_DEPTH || *pos >= MAX_EXPR_LEN - 1) {
+        gen_num(buf, pos);
+        return;
+    }
+    depth++;
+    int choice = rand() % 3;
+    switch (choice) {
+        case 0:
+            gen_num(buf, pos);
+            break;
+        case 1:
+            *pos += snprintf(buf + *pos, MAX_EXPR_LEN - *pos, "(");
+            gen_rand_expr(buf, pos);
+            *pos += snprintf(buf + *pos, MAX_EXPR_LEN - *pos, ")");
+            break;
+        default:
+            gen_rand_expr(buf, pos);
+            gen_op(buf, pos);
+            gen_rand_expr(buf, pos);
+            break;
+    }
+    depth--;
+}
 /* We use the `readline' library to provide more flexibility to read from stdin. */
 static char* rl_gets() {
   static char *line_read = NULL;
@@ -47,12 +89,99 @@ static int cmd_c(char *args) {
   return 0;
 }
 
-
 static int cmd_q(char *args) {
+  nemu_state.state = NEMU_QUIT;
   return -1;
 }
 
+static int cmd_x(char *args){
+    char* n = strtok(args," ");
+    char* baseaddr = strtok(NULL," ");
+    int len = 0;
+    paddr_t addr = 0;
+    sscanf(n, "%d", &len);
+    sscanf(baseaddr,"%x", &addr);
+    for(int i = 0 ; i < len ; i ++)
+    {
+        printf("%x\n",paddr_read(addr,4));
+        addr = addr + 4;
+    }
+    return 0;
+}
+
+static int cmd_p(char *args) {
+	uint32_t num ;
+	bool suc;
+	num = expr (args,&suc);
+	if (suc)
+		printf ("0x%x:\t%d\n",num,num);
+  else printf("false\n");
+	return 0;
+}
+
 static int cmd_help(char *args);
+
+static int cmd_si(char *args){
+  int step =0;
+  if(args == NULL)
+    step =1;
+  else
+    sscanf(args,"%d",&step);
+  cpu_exec(step);
+  return 0;
+}
+
+static int cmd_info(char *args){
+  if(args == NULL)
+      printf("No args.\n");
+  else if(strcmp(args, "r") == 0)
+      isa_reg_display();
+  else if(strcmp(args, "w") == 0)
+      info_watchpoints();
+  return 0;
+}
+
+static int cmd_d (char *args){
+  if(args == NULL)
+      printf("No args.\n");
+  else{
+      delete_watchpoint(atoi(args));
+  }
+  return 0;
+}
+
+static int cmd_w(char* args){
+  add_watchpoint(args);
+  return 0;
+}
+
+static int cmd_t(char *args) {
+  int count = 1; 
+  if (args != NULL) {
+      sscanf(args, "%d", &count); 
+      if (count <= 0) {
+          printf("Invalid count: %d, using default (1)\n", count);
+          count = 1; 
+      }
+  }
+
+  srand(time(NULL)); 
+  for (int i = 0; i < count; i++) {
+      char expr_buf[MAX_EXPR_LEN] = {0};
+      int pos = 0;
+      gen_rand_expr(expr_buf, &pos);
+      printf("Expression %d: %s\n", i + 1, expr_buf);
+      
+      bool success;
+      uint32_t result = expr(expr_buf, &success);
+      if (success) {
+          printf("Result: %u (0x%x)\n", result, result);
+      } else {
+          printf("Evaluation failed.\n");
+      }
+  }
+  return 0;
+}
 
 static struct {
   const char *name;
@@ -62,9 +191,15 @@ static struct {
   { "help", "Display information about all supported commands", cmd_help },
   { "c", "Continue the execution of the program", cmd_c },
   { "q", "Exit NEMU", cmd_q },
-
+  { "si", "Step into the program (step by instruction)", cmd_si }, 
+  { "info","Print register status or Prints the monitoring point information",cmd_info},
+  { "x","x 10 $esp",cmd_x},
+  { "p","calculate the expr",cmd_p},
+  { "w","add watchpoint",cmd_w},
+  { "d","delete watchpoint",cmd_d},
+  { "info","print watchpoint information",cmd_info},
+  { "t", "Generate and evaluate a random expression",cmd_t}
   /* TODO: Add more commands */
-
 };
 
 #define NR_CMD ARRLEN(cmd_table)

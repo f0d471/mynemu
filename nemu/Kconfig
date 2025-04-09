@@ -193,6 +193,12 @@ config DIFFTEST_REF_NAME
   default "none"
 endmenu
 
+config WATCHPOINT
+  bool "Enable watchpoints"
+  default y
+  help
+    Enable support for watchpoints in the NEMU debugger.
+
 if MODE_SYSTEM
 source "src/memory/Kconfig"
 source "src/device/Kconfig"
